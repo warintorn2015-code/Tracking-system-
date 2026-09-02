@@ -1,90 +1,42 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Company Work Dashboard</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Task Ops</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%234F5DFF%22/><text x=%2212%22 y=%2217%22 font-size=%2214%22 fill=%22white%22 text-anchor=%22middle%22 font-family=%22Arial%22>T</text></svg>" />
+
+<!-- iOS: launch in standalone (no browser chrome) once added to Home Screen -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Task Ops" />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<!-- Tailwind (CDN build, utility classes only — fine for a personal single-page tool) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- React 18 (UMD) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
 <style>
-:root{--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#7b8497;--line:#e7eaf0;--accent:#5b5bd6;--shadow:0 8px 28px rgba(28,35,55,.07)}
-*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-button,input,select{font:inherit}button{cursor:pointer}
-.app{display:flex;min-height:100vh}.sidebar{width:240px;background:#171a2a;color:#fff;padding:24px 16px;position:sticky;top:0;height:100vh}
-.logo{font-size:19px;font-weight:800;padding:8px 12px 28px}.nav button{display:block;width:100%;border:0;background:transparent;color:#aeb4c8;text-align:left;padding:12px;border-radius:10px;margin:5px 0}.nav button.active,.nav button:hover{background:#292d45;color:#fff}.main{flex:1;padding:28px;max-width:1500px;margin:auto;width:100%}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.top h1{margin:0 0 5px;font-size:27px}.muted{color:var(--muted);font-size:14px}.primary{background:var(--accent);color:#fff;border:0;padding:11px 16px;border-radius:10px;font-weight:700}
-.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}.label{font-size:13px;color:var(--muted)}.num{font-size:28px;font-weight:800;margin-top:7px}.red{color:#dc4d5a}.green{color:#1d9a68}.blue{color:#3d78d8}.yellow{color:#c98916}
-.toolbar{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.toolbar input,.toolbar select{border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 12px;min-width:160px}.toolbar input{flex:1;min-width:220px}
-.table-wrap{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:auto;box-shadow:var(--shadow)}table{width:100%;border-collapse:collapse;min-width:850px}th,td{padding:15px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}th{font-size:12px;color:var(--muted);font-weight:700;background:#fafbfc}tr:hover td{background:#fafaff}.badge{display:inline-block;padding:6px 9px;border-radius:999px;font-size:12px;font-weight:700}.todo{background:#edf2ff;color:#4766c5}.doing{background:#fff5d9;color:#a36e08}.done{background:#e6f8ef;color:#17855b}.late{background:#ffe8eb;color:#c53d4b}.priority-high{color:#c53d4b;font-weight:700}.priority-medium{color:#b47a0c;font-weight:700}.priority-low{color:#43806a;font-weight:700}.clickable{cursor:pointer}
-.empty{text-align:center;padding:45px;color:var(--muted)}
-.modal-bg{position:fixed;inset:0;background:rgba(10,15,30,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:5}.modal{background:#fff;border-radius:16px;width:min(620px,100%);padding:24px;max-height:90vh;overflow:auto}.modal h2{margin-top:0}.close{float:right;border:0;background:#f0f1f5;border-radius:50%;width:34px;height:34px}.form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form label{font-size:13px;color:var(--muted)}.form input,.form select,.form textarea{width:100%;margin-top:6px;border:1px solid var(--line);border-radius:9px;padding:10px}.form textarea{min-height:90px;resize:vertical}.full{grid-column:1/-1}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}.secondary{border:1px solid var(--line);background:#fff;padding:10px 14px;border-radius:9px}
-.progress{height:7px;background:#edf0f5;border-radius:9px;overflow:hidden;width:100px}.progress i{display:block;height:100%;background:var(--accent)}
-@media(max-width:900px){.sidebar{display:none}.cards{grid-template-columns:repeat(2,1fr)}.main{padding:18px}.form{grid-template-columns:1fr}}
+  html, body, #root { height: 100%; margin: 0; }
+  body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 4px; }
 </style>
 </head>
 <body>
-<div class="app">
-<aside class="sidebar"><div class="logo">WORKFLOW<span style="color:#8d8df0">.</span></div><div class="nav"><button class="active">▦ Dashboard</button><button onclick="focusTable()">☷ งานทั้งหมด</button><button onclick="showAdd()">＋ เพิ่มงาน</button></div></aside>
-<main class="main">
-<div class="top"><div><h1>Dashboard</h1><div class="muted">ติดตามสถานะงานของบริษัท</div></div><button class="primary" onclick="showAdd()">＋ เพิ่มงานใหม่</button></div>
-<section class="cards">
-<div class="card"><div class="label">งานทั้งหมด</div><div class="num" id="all">0</div></div>
-<div class="card"><div class="label">รอดำเนินการ</div><div class="num blue" id="todo">0</div></div>
-<div class="card"><div class="label">กำลังดำเนินการ</div><div class="num yellow" id="doing">0</div></div>
-<div class="card"><div class="label">เสร็จแล้ว</div><div class="num green" id="done">0</div></div>
-<div class="card"><div class="label">เกินกำหนด</div><div class="num red" id="late">0</div></div>
-</section>
-<div class="toolbar" id="filters">
-<input id="search" placeholder="🔎 ค้นหางาน / ลูกค้า / ผู้รับผิดชอบ..." oninput="render()">
-<select id="status" onchange="render()"><option value="">ทุกสถานะ</option><option>รอดำเนินการ</option><option>กำลังดำเนินการ</option><option>เสร็จแล้ว</option></select>
-<select id="owner" onchange="render()"><option value="">ผู้รับผิดชอบทั้งหมด</option></select>
-<select id="priority" onchange="render()"><option value="">ทุก Priority</option><option>สูง</option><option>กลาง</option><option>ต่ำ</option></select>
-<select id="sort" onchange="render()"><option value="date">เรียงตาม Deadline</option><option value="priority">เรียงตาม Priority</option><option value="progress">เรียงตาม Progress</option></select>
-<button class="secondary" onclick="clearFilters()">ล้างตัวกรอง</button>
-</div>
-<div class="table-wrap" id="worktable"><table><thead><tr><th>งาน</th><th>โครงการ / ลูกค้า</th><th>ผู้รับผิดชอบ</th><th>Deadline</th><th>Priority</th><th>สถานะ</th><th>Progress</th></tr></thead><tbody id="rows"></tbody></table></div>
-</main></div>
-<div class="modal-bg" id="modal"><div class="modal"><button class="close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
-<script>
-const KEY="company_dashboard_tasks_v1";
-let tasks=JSON.parse(localStorage.getItem(KEY)||"null")||[
-{id:1,title:"จัดทำใบเสนอราคา",client:"Project A",owner:"คุณ A",date:"2026-08-30",priority:"สูง",status:"กำลังดำเนินการ",progress:70,desc:"จัดทำและตรวจสอบใบเสนอราคาก่อนส่งลูกค้า"},
-{id:2,title:"ส่งเอกสารให้ลูกค้า",client:"Project B",owner:"คุณ B",date:"2026-08-29",priority:"กลาง",status:"รอดำเนินการ",progress:0,desc:"เตรียมเอกสารและส่งให้ลูกค้าทางอีเมล"},
-{id:3,title:"ปิดงานและสรุปค่าใช้จ่าย",client:"Project C",owner:"คุณ C",date:"2026-08-27",priority:"สูง",status:"เสร็จแล้ว",progress:100,desc:"ตรวจเอกสารและสรุปค่าใช้จ่ายเรียบร้อย"},
-{id:4,title:"แก้ไข Presentation",client:"Project D",owner:"คุณ A",date:"2026-09-02",priority:"กลาง",status:"กำลังดำเนินการ",progress:45,desc:"ปรับแก้สไลด์ตาม Feedback"},
-{id:5,title:"ติดตามการชำระเงิน",client:"Project E",owner:"คุณ D",date:"2026-08-26",priority:"สูง",status:"รอดำเนินการ",progress:0,desc:"ติดตามใบแจ้งหนี้และสถานะการชำระเงิน"},
-{id:6,title:"ตรวจสอบข้อมูลลูกค้า",client:"Project F",owner:"คุณ B",date:"2026-09-05",priority:"ต่ำ",status:"กำลังดำเนินการ",progress:30,desc:"ตรวจสอบข้อมูลในระบบหลังบ้าน"}
-];
-function save(){localStorage.setItem(KEY,JSON.stringify(tasks))}
-function isLate(t){return t.status!=="เสร็จแล้ว"&&new Date(t.date+"T23:59:59")<new Date()}
-function badge(t){return `<span class="badge ${t.status==="เสร็จแล้ว"?"done":t.status==="กำลังดำเนินการ"?"doing":"todo"}">${t.status}</span>`}
-function render(){
-let q=document.getElementById("search").value.toLowerCase(), st=document.getElementById("status").value, ow=document.getElementById("owner").value, pr=document.getElementById("priority").value, so=document.getElementById("sort").value;
-let f=tasks.filter(t=>(!q||[t.title,t.client,t.owner].join(" ").toLowerCase().includes(q))&&(!st||t.status===st)&&(!ow||t.owner===ow)&&(!pr||t.priority===pr));
-f.sort((a,b)=>so==="priority"?({"สูง":0,"กลาง":1,"ต่ำ":2}[a.priority]-{"สูง":0,"กลาง":1,"ต่ำ":2}[b.priority]):so==="progress"?b.progress-a.progress:new Date(a.date)-new Date(b.date));
-document.getElementById("all").textContent=tasks.length; document.getElementById("todo").textContent=tasks.filter(t=>t.status==="รอดำเนินการ").length; document.getElementById("doing").textContent=tasks.filter(t=>t.status==="กำลังดำเนินการ").length; document.getElementById("done").textContent=tasks.filter(t=>t.status==="เสร็จแล้ว").length; document.getElementById("late").textContent=tasks.filter(isLate).length;
-let owners=[...new Set(tasks.map(t=>t.owner))]; let sel=document.getElementById("owner"); let current=sel.value; sel.innerHTML='<option value="">ผู้รับผิดชอบทั้งหมด</option>'+owners.map(x=>`<option>${x}</option>`).join(""); sel.value=current;
-document.getElementById("rows").innerHTML=f.length?f.map(t=>`<tr class="clickable" onclick="showDetail(${t.id})"><td><b>${esc(t.title)}</b></td><td>${esc(t.client)}</td><td>${esc(t.owner)}</td><td>${fmt(t.date)} ${isLate(t)?'<span class="badge late">เกินกำหนด</span>':''}</td><td class="priority-${t.priority==="สูง"?"high":t.priority==="กลาง"?"medium":"low"}">${t.priority}</td><td>${badge(t)}</td><td><div style="display:flex;align-items:center;gap:8px"><div class="progress"><i style="width:${t.progress}%"></i></div>${t.progress}%</div></td></tr>`).join(""):`<tr><td colspan="7" class="empty">ไม่พบงานที่ตรงกับตัวกรอง</td></tr>`;
-}
-function fmt(s){return new Date(s+"T00:00:00").toLocaleDateString("th-TH",{day:"2-digit",month:"short",year:"numeric"})}
-function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
-function showDetail(id){let t=tasks.find(x=>x.id===id);document.getElementById("modalContent").innerHTML=`<h2>${esc(t.title)}</h2><p class="muted">${esc(t.client)}</p><div class="form">
-<label>ผู้รับผิดชอบ<select id="eowner"><option>คุณ A</option><option>คุณ B</option><option>คุณ C</option><option>คุณ D</option></select></label>
-<label>Deadline<input type="date" id="edate" value="${t.date}"></label>
-<label>Priority<select id="epriority"><option>สูง</option><option>กลาง</option><option>ต่ำ</option></select></label>
-<label>สถานะ<select id="estatus"><option>รอดำเนินการ</option><option>กำลังดำเนินการ</option><option>เสร็จแล้ว</option></select></label>
-<label class="full">Progress: <b id="pv">${t.progress}</b>%<input type="range" id="eprogress" min="0" max="100" value="${t.progress}" oninput="pv.textContent=this.value"></label>
-<label class="full">รายละเอียด<textarea id="edesc">${esc(t.desc||"")}</textarea></label></div><div class="modal-actions"><button class="secondary" onclick="deleteTask(${t.id})">ลบงาน</button><button class="primary" onclick="updateTask(${t.id})">บันทึกการแก้ไข</button></div>`;
-eowner.value=t.owner;epriority.value=t.priority;estatus.value=t.status;document.getElementById("modal").style.display="flex"}
-function updateTask(id){let t=tasks.find(x=>x.id===id);Object.assign(t,{owner:eowner.value,date:edate.value,priority:epriority.value,status:estatus.value,progress:+eprogress.value,desc:edesc.value});save();closeModal();render()}
-function deleteTask(id){if(confirm("ต้องการลบงานนี้ใช่หรือไม่?")){tasks=tasks.filter(t=>t.id!==id);save();closeModal();render()}}
-function showAdd(){document.getElementById("modalContent").innerHTML=`<h2>เพิ่มงานใหม่</h2><div class="form">
-<label class="full">ชื่องาน<input id="ntitle" placeholder="เช่น จัดทำใบเสนอราคา"></label>
-<label>โครงการ / ลูกค้า<input id="nclient" placeholder="Project A"></label><label>ผู้รับผิดชอบ<select id="nowner"><option>คุณ A</option><option>คุณ B</option><option>คุณ C</option><option>คุณ D</option></select></label>
-<label>Deadline<input type="date" id="ndate"></label><label>Priority<select id="npriority"><option>สูง</option><option selected>กลาง</option><option>ต่ำ</option></select></label>
-<label class="full">รายละเอียด<textarea id="ndesc"></textarea></label></div><div class="modal-actions"><button class="secondary" onclick="closeModal()">ยกเลิก</button><button class="primary" onclick="addTask()">เพิ่มงาน</button></div>`;document.getElementById("modal").style.display="flex";ndate.value=new Date().toISOString().slice(0,10)}
-function addTask(){if(!ntitle.value.trim()){alert("กรุณาใส่ชื่องาน");return}tasks.push({id:Date.now(),title:ntitle.value.trim(),client:nclient.value.trim()||"-",owner:nowner.value,date:ndate.value,priority:npriority.value,status:"รอดำเนินการ",progress:0,desc:ndesc.value});save();closeModal();render()}
-function closeModal(){document.getElementById("modal").style.display="none"}
-function clearFilters(){search.value="";status.value="";owner.value="";priority.value="";sort.value="date";render()}
-function focusTable(){document.getElementById("worktable").scrollIntoView({behavior:"smooth"})}
-render();
-</script>
+  <div id="root">
+    <div style="display:flex;height:100vh;width:100%;align-items:center;justify-content:center;font-family:Inter,system-ui,sans-serif;color:#9CA3AF;font-size:13px;">
+      กำลังโหลด...
+    </div>
+  </div>
+
+  <script src="app.compiled.js"></script>
 </body>
 </html>
