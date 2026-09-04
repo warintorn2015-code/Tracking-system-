@@ -59,6 +59,11 @@ const ListChecks = (p) => React.createElement(Icon, { ...p, paths: React.createE
         React.createElement("path", { d: "M13 12h8" }),
         React.createElement("path", { d: "M13 18h8" })) });
 const Check = (p) => React.createElement(Icon, { ...p, paths: React.createElement("path", { d: "M20 6 9 17l-5-5" }) });
+const Grid2x2 = (p) => React.createElement(Icon, { ...p, paths: React.createElement(React.Fragment, null,
+        React.createElement("rect", { x: "3", y: "3", width: "8", height: "8", rx: "1" }),
+        React.createElement("rect", { x: "13", y: "3", width: "8", height: "8", rx: "1" }),
+        React.createElement("rect", { x: "3", y: "13", width: "8", height: "8", rx: "1" }),
+        React.createElement("rect", { x: "13", y: "13", width: "8", height: "8", rx: "1" })) });
 // ---- Storage shim: same async interface as the Claude artifact API, ----
 // ---- backed by the browser's own localStorage on a real deployment. ----
 window.storage = window.storage || {
@@ -91,7 +96,71 @@ window.storage = window.storage || {
         return { keys, prefix, shared: false };
     },
 };
-const STATUS = ["To Do", "Doing", "Review", "Done", "Blocked"];
+// ============================================================
+// Google Calendar sync (two-way)
+// ============================================================
+// 1) Create OAuth credentials at https://console.cloud.google.com
+//    (enable "Google Calendar API", create an OAuth Client ID of
+//    type "Web application", add your GitHub Pages URL as an
+//    Authorized JavaScript origin) — see README.md for full steps.
+// 2) Paste the Client ID below.
+const GOOGLE_CLIENT_ID = "824631456876-fhr1qlle5cqajs51g2jec6k5kida39e2.apps.googleusercontent.com";
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const GCAL_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const toRFC3339 = (dateStr, timeStr) => `${dateStr}T${timeStr}:00`;
+async function gcalListEvents(token, timeMinISO, timeMaxISO) {
+    const params = new URLSearchParams({
+        timeMin: timeMinISO,
+        timeMax: timeMaxISO,
+        singleEvents: "true",
+        orderBy: "startTime",
+        maxResults: "250",
+    });
+    const res = await fetch(`${GCAL_EVENTS_URL}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok)
+        throw new Error(`gcal_list_${res.status}`);
+    const data = await res.json();
+    return data.items || [];
+}
+async function gcalInsertEvent(token, { summary, description, startISO, endISO }) {
+    const res = await fetch(GCAL_EVENTS_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+            summary,
+            description,
+            start: { dateTime: startISO, timeZone: LOCAL_TZ },
+            end: { dateTime: endISO, timeZone: LOCAL_TZ },
+        }),
+    });
+    if (!res.ok)
+        throw new Error(`gcal_insert_${res.status}`);
+    return res.json();
+}
+async function gcalUpdateEvent(token, eventId, { summary, description, startISO, endISO }) {
+    const res = await fetch(`${GCAL_EVENTS_URL}/${eventId}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+            summary,
+            description,
+            start: { dateTime: startISO, timeZone: LOCAL_TZ },
+            end: { dateTime: endISO, timeZone: LOCAL_TZ },
+        }),
+    });
+    if (!res.ok)
+        throw new Error(`gcal_update_${res.status}`);
+    return res.json();
+}
+async function gcalDeleteEvent(token, eventId) {
+    await fetch(`${GCAL_EVENTS_URL}/${eventId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => { });
+}
 const PRIORITY = ["สูง", "กลาง", "ต่ำ"];
 const CATEGORY = ["งานเรียน", "งานส่วนตัว", "โปรเจกต์", "อื่นๆ"];
 const STATUS_STYLE = {
@@ -115,6 +184,17 @@ const daysUntil = (dateStr) => {
     const d = new Date(dateStr);
     d.setHours(0, 0, 0, 0);
     return Math.round((d - today) / 86400000);
+};
+// A task counts as "urgent" (for the priority matrix) when its deadline
+// is overdue or within the next 3 days, and it isn't already Done.
+const URGENT_THRESHOLD_DAYS = 5;
+const isUrgent = (task) => {
+    if (task.status === "Done")
+        return false;
+    const d = daysUntil(task.deadline);
+    if (d === null)
+        return false;
+    return d <= URGENT_THRESHOLD_DAYS;
 };
 // ---- Calendar helpers ----
 // Google Calendar wants UTC times in YYYYMMDDTHHMMSSZ. We treat the
@@ -183,6 +263,7 @@ const seedTasks = [
         category: "งานเรียน",
         owner: "Tarn",
         priority: "สูง",
+        important: true,
         start: "2026-08-25",
         deadline: "2026-09-05",
         status: "Doing",
@@ -206,6 +287,7 @@ const seedTasks = [
         category: "งานเรียน",
         owner: "Tarn",
         priority: "กลาง",
+        important: false,
         start: "2026-08-20",
         deadline: "2026-09-10",
         status: "To Do",
@@ -224,6 +306,7 @@ const seedTasks = [
         category: "งานเรียน",
         owner: "Tarn",
         priority: "สูง",
+        important: false,
         start: "2026-08-15",
         deadline: "2026-08-27",
         status: "Done",
@@ -242,6 +325,7 @@ const seedTasks = [
         category: "โปรเจกต์",
         owner: "Tarn",
         priority: "กลาง",
+        important: true,
         start: "2026-08-22",
         deadline: "2026-09-01",
         status: "Review",
@@ -264,6 +348,7 @@ const seedTasks = [
         category: "งานเรียน",
         owner: "Tarn",
         priority: "สูง",
+        important: true,
         start: "2026-08-26",
         deadline: "2026-08-30",
         status: "Blocked",
@@ -342,7 +427,7 @@ function Th({ children, sortKey, sort, setSort, align = "left" }) {
             active &&
                 (sort.dir === "asc" ? React.createElement(ChevronUp, { size: 12 }) : React.createElement(ChevronDown, { size: 12 })))));
 }
-function SubtaskRow({ subtask, parentTask, onToggle, onDelete, onUpdate }) {
+function SubtaskRow({ subtask, parentTask, onToggle, onDelete, onUpdate, googleToken, onPushToGoogle }) {
     const [open, setOpen] = useState(false);
     const hasBooking = subtask.workDate && subtask.workStart && subtask.workEnd;
     const gcalUrl = hasBooking ? buildGCalUrl(subtaskToGCalItem(subtask, parentTask)) : null;
@@ -354,6 +439,8 @@ function SubtaskRow({ subtask, parentTask, onToggle, onDelete, onUpdate }) {
                 } }, subtask.done && React.createElement(Check, { size: 11, color: "white", strokeWidth: 3 })),
             React.createElement("span", { className: `flex-1 text-xs ${subtask.done ? "text-gray-400 line-through" : "text-[#1F2430]"}` }, subtask.title),
             hasBooking && (React.createElement("span", { className: "shrink-0 text-[10px] text-[#4F5DFF]", style: { fontFamily: "'JetBrains Mono', monospace" } }, subtask.workStart)),
+            subtask.gcalEventId && (React.createElement("span", { title: "\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E01\u0E31\u0E1A Google Calendar \u0E41\u0E25\u0E49\u0E27" },
+                React.createElement(Check, { size: 11, className: "shrink-0 text-[#4F5DFF]" }))),
             React.createElement("button", { onClick: () => setOpen((o) => !o), className: `shrink-0 rounded p-0.5 transition-colors ${hasBooking ? "text-[#4F5DFF]" : "text-gray-300 opacity-0 group-hover:opacity-100"} hover:bg-gray-100`, title: "\u0E08\u0E2D\u0E07\u0E40\u0E27\u0E25\u0E32\u0E17\u0E33\u0E07\u0E32\u0E19" },
                 React.createElement(CalendarPlus, { size: 12 })),
             React.createElement("button", { onClick: () => onDelete(subtask.id), className: "shrink-0 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500" },
@@ -364,11 +451,22 @@ function SubtaskRow({ subtask, parentTask, onToggle, onDelete, onUpdate }) {
             React.createElement("div", { className: "grid grid-cols-2 gap-1.5" },
                 React.createElement("input", { type: "time", value: subtask.workStart, onChange: (e) => onUpdate(subtask.id, { workStart: e.target.value }), className: "w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] focus:border-[#4F5DFF] focus:outline-none" }),
                 React.createElement("input", { type: "time", value: subtask.workEnd, onChange: (e) => onUpdate(subtask.id, { workEnd: e.target.value }), className: "w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] focus:border-[#4F5DFF] focus:outline-none" })),
-            hasBooking && (gcalUrl ? (React.createElement("a", { href: gcalUrl, target: "_blank", rel: "noopener noreferrer", className: "mt-1.5 flex w-full items-center justify-center gap-1 rounded-md bg-[#4F5DFF] py-1.5 text-[11px] font-medium text-white hover:brightness-110" },
-                React.createElement(ExternalLink, { size: 11 }),
-                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E25\u0E07 Google Calendar")) : (React.createElement("p", { className: "mt-1.5 text-[11px] text-red-400" }, "\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21")))))));
+            hasBooking &&
+                (googleToken ? (React.createElement("button", { onClick: () => onPushToGoogle(subtask.id, {
+                        title: `${parentTask.name} · ${subtask.title}`,
+                        description: `Task ย่อยของ: ${parentTask.name}`,
+                        workDate: subtask.workDate,
+                        workStart: subtask.workStart,
+                        workEnd: subtask.workEnd,
+                        existingEventId: subtask.gcalEventId,
+                    }), className: "mt-1.5 flex w-full items-center justify-center gap-1 rounded-md bg-[#4F5DFF] py-1.5 text-[11px] font-medium text-white hover:brightness-110" },
+                    React.createElement(ExternalLink, { size: 11 }),
+                    " ",
+                    subtask.gcalEventId ? "อัปเดตใน Google Calendar" : "ซิงค์กับ Google Calendar")) : gcalUrl ? (React.createElement("a", { href: gcalUrl, target: "_blank", rel: "noopener noreferrer", className: "mt-1.5 flex w-full items-center justify-center gap-1 rounded-md bg-gray-400 py-1.5 text-[11px] font-medium text-white hover:brightness-110" },
+                    React.createElement(ExternalLink, { size: 11 }),
+                    " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E25\u0E07 Google Calendar (\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D)")) : (React.createElement("p", { className: "mt-1.5 text-[11px] text-red-400" }, "\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21")))))));
 }
-function SubtaskList({ task, onAdd, onToggle, onDelete, onUpdate }) {
+function SubtaskList({ task, onAdd, onToggle, onDelete, onUpdate, googleToken, onPushToGoogle }) {
     const [draft, setDraft] = useState("");
     const total = task.subtasks.length;
     const done = task.subtasks.filter((s) => s.done).length;
@@ -391,7 +489,7 @@ function SubtaskList({ task, onAdd, onToggle, onDelete, onUpdate }) {
         total > 0 && (React.createElement("div", { className: "mb-2.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-200" },
             React.createElement("div", { className: "h-full rounded-full transition-all", style: { width: `${pct}%`, background: pct === 100 ? "#10B981" : "#4F5DFF" } }))),
         React.createElement("div", { className: "mb-2 space-y-1" },
-            task.subtasks.map((s) => (React.createElement(SubtaskRow, { key: s.id, subtask: s, parentTask: task, onToggle: onToggle, onDelete: onDelete, onUpdate: onUpdate }))),
+            task.subtasks.map((s) => (React.createElement(SubtaskRow, { key: s.id, subtask: s, parentTask: task, onToggle: onToggle, onDelete: onDelete, onUpdate: onUpdate, googleToken: googleToken, onPushToGoogle: onPushToGoogle }))),
             total === 0 && React.createElement("p", { className: "py-1 text-xs text-gray-400" }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35 task \u0E22\u0E48\u0E2D\u0E22")),
         React.createElement("div", { className: "flex items-center gap-1.5" },
             React.createElement("input", { value: draft, onChange: (e) => setDraft(e.target.value), onKeyDown: (e) => {
@@ -418,6 +516,7 @@ function collectSessions(tasks) {
                 workDate: t.workDate,
                 workStart: t.workStart,
                 workEnd: t.workEnd,
+                gcalEventId: t.gcalEventId || null,
             });
         }
         (t.subtasks || []).forEach((s) => {
@@ -432,11 +531,39 @@ function collectSessions(tasks) {
                     workDate: s.workDate,
                     workStart: s.workStart,
                     workEnd: s.workEnd,
+                    gcalEventId: s.gcalEventId || null,
                 });
             }
         });
     });
     return sessions;
+}
+// Convert Google Calendar API events into the same session shape used
+// for app-originated bookings, so both render in one grid. Events we
+// pushed ourselves (id already tracked on a task/subtask) are skipped
+// here since they're already shown via collectSessions above.
+function googleEventsToSessions(googleEvents, pushedIds) {
+    const out = [];
+    googleEvents.forEach((ev) => {
+        if (!ev.start || !ev.start.dateTime)
+            return; // skip all-day events in the timed grid
+        if (pushedIds.has(ev.id))
+            return; // avoid showing our own pushed events twice
+        const start = new Date(ev.start.dateTime);
+        const end = ev.end && ev.end.dateTime ? new Date(ev.end.dateTime) : start;
+        const pad = (n) => String(n).padStart(2, "0");
+        out.push({
+            key: `gcal-${ev.id}`,
+            kind: "google",
+            title: ev.summary || "(ไม่มีชื่อ)",
+            status: "Google",
+            workDate: toISODate(start),
+            workStart: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+            workEnd: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
+            htmlLink: ev.htmlLink,
+        });
+    });
+    return out;
 }
 const startOfWeek = (d) => {
     const date = new Date(d);
@@ -455,6 +582,8 @@ const toISODate = (d) => {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 const WEEKDAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+// Style for externally-synced Google Calendar events shown in the grid
+const GOOGLE_STYLE = { bg: "#EEF2FF", fg: "#4338CA", dot: "#6366F1" };
 function WeekGrid({ sessions, weekStart, onSelectSession }) {
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     const todayStr = todayISO();
@@ -480,17 +609,112 @@ function WeekGrid({ sessions, weekStart, onSelectSession }) {
                         color: isToday ? "white" : "#1F2430",
                     } }, d.getDate())),
             React.createElement("div", { className: "flex-1 space-y-1" }, items.map((s) => {
-                const st = STATUS_STYLE[s.status];
-                return (React.createElement("button", { key: s.key, onClick: () => onSelectSession(s), className: "w-full rounded-md px-1.5 py-1 text-left transition-transform hover:scale-[1.02]", style: { background: st.bg } },
-                    React.createElement("div", { className: "truncate text-[10px] font-semibold", style: { color: st.fg, fontFamily: "'JetBrains Mono', monospace" } }, s.workStart),
+                const st = s.kind === "google" ? GOOGLE_STYLE : STATUS_STYLE[s.status];
+                const isGoogle = s.kind === "google";
+                return (React.createElement("button", { key: s.key, onClick: () => (isGoogle ? window.open(s.htmlLink, "_blank") : onSelectSession(s)), className: "w-full rounded-md px-1.5 py-1 text-left transition-transform hover:scale-[1.02]", style: { background: st.bg, border: isGoogle ? "1px dashed #C7D2FE" : "none" } },
+                    React.createElement("div", { className: "flex items-center gap-1 truncate text-[10px] font-semibold", style: { color: st.fg, fontFamily: "'JetBrains Mono', monospace" } },
+                        isGoogle && React.createElement(CalendarDays, { size: 9 }),
+                        s.workStart),
                     React.createElement("div", { className: "truncate text-[10px] leading-tight", style: { color: st.fg } },
                         s.kind === "subtask" && "↳ ",
                         s.title)));
             }))));
     })));
 }
-function CalendarView({ tasks, onSelectTask }) {
-    const sessions = useMemo(() => collectSessions(tasks), [tasks]);
+const MATRIX_QUADRANTS = [
+    {
+        key: "q1",
+        title: "สำคัญ + เร่งด่วน",
+        subtitle: "ทำทันที",
+        important: true,
+        urgent: true,
+        accent: "#EF4444",
+        bg: "#FEF2F2",
+    },
+    {
+        key: "q2",
+        title: "ไม่สำคัญ + เร่งด่วน",
+        subtitle: "มอบหมาย หรือทำให้เสร็จเร็วๆ",
+        important: false,
+        urgent: true,
+        accent: "#F59E0B",
+        bg: "#FFFBEB",
+    },
+    {
+        key: "q3",
+        title: "สำคัญ + ไม่เร่งด่วน",
+        subtitle: "วางแผนทำ",
+        important: true,
+        urgent: false,
+        accent: "#4F5DFF",
+        bg: "#F5F6FF",
+    },
+    {
+        key: "q4",
+        title: "ไม่สำคัญ + ไม่เร่งด่วน",
+        subtitle: "ทำทีหลัง หรือตัดทิ้ง",
+        important: false,
+        urgent: false,
+        accent: "#9CA3AF",
+        bg: "#F9FAFB",
+    },
+];
+function MatrixTaskCard({ task, onSelect, onToggleImportant }) {
+    return (React.createElement("div", { onClick: () => onSelect(task), className: "cursor-pointer rounded-lg border border-gray-200 bg-white p-2.5 hover:border-gray-300" },
+        React.createElement("div", { className: "flex items-start justify-between gap-2" },
+            React.createElement("span", { className: "min-w-0 flex-1 truncate text-xs font-medium text-[#1F2430]" }, task.name),
+            React.createElement("button", { onClick: (e) => {
+                    e.stopPropagation();
+                    onToggleImportant(task.id, !task.important);
+                }, title: task.important ? "เอาออกจาก 'สำคัญ'" : "ทำเครื่องหมายว่า 'สำคัญ'", className: "shrink-0" },
+                React.createElement("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: task.important ? "#F59E0B" : "none", stroke: task.important ? "#F59E0B" : "#D1D5DB", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                    React.createElement("polygon", { points: "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" })))),
+        React.createElement("div", { className: "mt-1.5 flex items-center gap-1.5" },
+            React.createElement(DeadlineBadge, { deadline: task.deadline, status: task.status }),
+            React.createElement("span", { className: "rounded-full px-1.5 py-0.5 text-[10px] font-medium", style: { background: STATUS_STYLE[task.status].bg, color: STATUS_STYLE[task.status].fg } }, task.status))));
+}
+function MatrixView({ tasks, onSelectTask, onToggleImportant }) {
+    const buckets = useMemo(() => {
+        const map = { q1: [], q2: [], q3: [], q4: [] };
+        tasks.forEach((t) => {
+            const urgent = isUrgent(t);
+            const important = !!t.important;
+            const q = MATRIX_QUADRANTS.find((q) => q.important === important && q.urgent === urgent);
+            map[q.key].push(t);
+        });
+        return map;
+    }, [tasks]);
+    const activeTasks = tasks.filter((t) => t.status !== "Done").length;
+    return (React.createElement("div", null,
+        React.createElement("p", { className: "mb-4 text-xs text-gray-400" },
+            "\"\u0E2A\u0E33\u0E04\u0E31\u0E0D\" \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E2D\u0E07\u0E44\u0E14\u0E49 (\u0E01\u0E14\u0E23\u0E39\u0E1B\u0E14\u0E32\u0E27\u0E17\u0E35\u0E48\u0E01\u0E32\u0E23\u0E4C\u0E14) \u00B7 \"\u0E40\u0E23\u0E48\u0E07\u0E14\u0E48\u0E27\u0E19\" \u0E04\u0E33\u0E19\u0E27\u0E13\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E08\u0E32\u0E01 deadline (\u0E40\u0E2B\u0E25\u0E37\u0E2D \u2264 ",
+            URGENT_THRESHOLD_DAYS,
+            " \u0E27\u0E31\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E25\u0E22\u0E01\u0E33\u0E2B\u0E19\u0E14)"),
+        React.createElement("div", { className: "grid grid-cols-2 gap-3" }, MATRIX_QUADRANTS.map((q) => {
+            const items = buckets[q.key];
+            return (React.createElement("div", { key: q.key, className: "flex min-h-[260px] flex-col rounded-xl border p-3", style: { borderColor: q.accent + "40", background: q.bg } },
+                React.createElement("div", { className: "mb-2.5 flex items-center justify-between" },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "flex items-center gap-1.5" },
+                            React.createElement("span", { className: "h-2 w-2 rounded-full", style: { background: q.accent } }),
+                            React.createElement("span", { className: "text-xs font-semibold", style: { color: q.accent } }, q.title)),
+                        React.createElement("p", { className: "mt-0.5 text-[10px] text-gray-400" }, q.subtitle)),
+                    React.createElement("span", { className: "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums", style: { background: "white", color: q.accent } }, items.length)),
+                React.createElement("div", { className: "flex-1 space-y-1.5" },
+                    items.length === 0 && React.createElement("p", { className: "py-4 text-center text-[11px] text-gray-300" }, "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E32\u0E19\u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14\u0E19\u0E35\u0E49"),
+                    items.map((t) => (React.createElement(MatrixTaskCard, { key: t.id, task: t, onSelect: onSelectTask, onToggleImportant: onToggleImportant }))))));
+        })),
+        activeTasks === 0 && (React.createElement("p", { className: "mt-4 text-center text-xs text-gray-400" }, "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E39\u0E48 \u2014 \u0E40\u0E22\u0E35\u0E48\u0E22\u0E21\u0E21\u0E32\u0E01 \uD83C\uDF89"))));
+}
+function CalendarView({ tasks, onSelectTask, googleEvents = [] }) {
+    const appSessions = useMemo(() => collectSessions(tasks), [tasks]);
+    const pushedIds = useMemo(() => {
+        const ids = new Set();
+        appSessions.forEach((s) => s.gcalEventId && ids.add(s.gcalEventId));
+        return ids;
+    }, [appSessions]);
+    const externalSessions = useMemo(() => googleEventsToSessions(googleEvents, pushedIds), [googleEvents, pushedIds]);
+    const sessions = useMemo(() => [...appSessions, ...externalSessions], [appSessions, externalSessions]);
     const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
     const unbooked = tasks.filter((t) => !t.workDate && t.status !== "Done");
     const weekLabel = useMemo(() => {
@@ -527,23 +751,29 @@ function CalendarView({ tasks, onSelectTask }) {
                 weekSessions.length,
                 ")"),
             React.createElement("div", { className: "space-y-2" }, weekSessions.map((s) => {
-                const gcalUrl = buildGCalUrl(s.kind === "task" ? taskToGCalItem(s.parentTask) : subtaskToGCalItem({ title: s.title, workDate: s.workDate, workStart: s.workStart, workEnd: s.workEnd }, s.parentTask));
-                const st = STATUS_STYLE[s.status];
+                const isGoogle = s.kind === "google";
+                const gcalUrl = isGoogle
+                    ? s.htmlLink
+                    : buildGCalUrl(s.kind === "task"
+                        ? taskToGCalItem(s.parentTask)
+                        : subtaskToGCalItem({ title: s.title, workDate: s.workDate, workStart: s.workStart, workEnd: s.workEnd }, s.parentTask));
+                const st = isGoogle ? GOOGLE_STYLE : STATUS_STYLE[s.status];
                 const d = new Date(`${s.workDate}T00:00:00`);
                 const dayLabel = d.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short" });
-                return (React.createElement("div", { key: s.key, className: "flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 hover:border-gray-300" },
+                const Content = (React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "truncate text-sm font-medium text-[#1F2430]" },
+                        s.kind === "subtask" && React.createElement("span", { className: "text-gray-400" }, "\u21B3 "),
+                        s.title),
+                    React.createElement("div", { className: "mt-0.5 flex items-center gap-2" },
+                        React.createElement("span", { className: "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", style: { background: st.bg, color: st.fg } },
+                            React.createElement("span", { className: "h-1 w-1 rounded-full", style: { background: st.dot } }),
+                            isGoogle ? "จาก Google" : s.status),
+                        !isGoogle && (React.createElement("span", { className: "text-[10px] text-gray-400" }, s.kind === "subtask" ? s.parentTask.name : s.category)))));
+                return (React.createElement("div", { key: s.key, className: "flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 hover:border-gray-300", style: isGoogle ? { borderStyle: "dashed" } : undefined },
                     React.createElement("div", { className: "flex w-20 shrink-0 flex-col items-center rounded-lg py-1.5 text-xs", style: { background: "#F5F6FF", color: "#4F5DFF" } },
                         React.createElement("span", { className: "text-[10px] text-gray-400" }, dayLabel),
                         React.createElement("span", { className: "font-semibold", style: { fontFamily: "'JetBrains Mono', monospace" } }, s.workStart)),
-                    React.createElement("button", { onClick: () => onSelectTask(s.parentTask), className: "min-w-0 flex-1 text-left" },
-                        React.createElement("div", { className: "truncate text-sm font-medium text-[#1F2430]" },
-                            s.kind === "subtask" && React.createElement("span", { className: "text-gray-400" }, "\u21B3 "),
-                            s.title),
-                        React.createElement("div", { className: "mt-0.5 flex items-center gap-2" },
-                            React.createElement("span", { className: "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", style: { background: st.bg, color: st.fg } },
-                                React.createElement("span", { className: "h-1 w-1 rounded-full", style: { background: st.dot } }),
-                                s.status),
-                            React.createElement("span", { className: "text-[10px] text-gray-400" }, s.kind === "subtask" ? s.parentTask.name : s.category))),
+                    isGoogle ? (React.createElement("div", { className: "min-w-0 flex-1 text-left" }, Content)) : (React.createElement("button", { onClick: () => onSelectTask(s.parentTask), className: "min-w-0 flex-1 text-left" }, Content)),
                     gcalUrl && (React.createElement("a", { href: gcalUrl, target: "_blank", rel: "noopener noreferrer", onClick: (e) => e.stopPropagation(), className: "flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-500 hover:border-[#4F5DFF] hover:text-[#4F5DFF]" },
                         React.createElement(ExternalLink, { size: 12 }),
                         " Google Calendar"))));
@@ -565,9 +795,90 @@ function TaskDashboard() {
     const [catFilter, setCatFilter] = useState("all");
     const [sort, setSort] = useState({ key: "deadline", dir: "asc" });
     const [selected, setSelected] = useState(null);
-    const [view, setView] = useState("tasks"); // "tasks" | "calendar"
+    const [view, setView] = useState("tasks"); // "tasks" | "calendar" | "matrix"
     const [loaded, setLoaded] = useState(false);
     const [saveError, setSaveError] = useState(false);
+    // ---- Google Calendar connection state ----
+    const [googleToken, setGoogleToken] = useState(null);
+    const [googleEvents, setGoogleEvents] = useState([]); // events pulled FROM Google (external, read-only in the grid)
+    const [gcalSyncing, setGcalSyncing] = useState(false);
+    const [gcalError, setGcalError] = useState("");
+    const tokenClientRef = React.useRef(null);
+    // Wait for the Google Identity Services script (loaded async in index.html)
+    // to be ready, then set up the OAuth token client once.
+    React.useEffect(() => {
+        let tries = 0;
+        const iv = setInterval(() => {
+            tries++;
+            if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+                tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
+                    scope: GOOGLE_CALENDAR_SCOPE,
+                    callback: (tokenResponse) => {
+                        if (tokenResponse && tokenResponse.access_token) {
+                            setGoogleToken(tokenResponse.access_token);
+                            setGcalError("");
+                        }
+                    },
+                    error_callback: () => {
+                        setGcalError("เชื่อมต่อ Google ไม่สำเร็จ ลองใหม่อีกครั้ง");
+                    },
+                });
+                clearInterval(iv);
+            }
+            else if (tries > 50) {
+                clearInterval(iv); // ~10s timeout — script likely blocked or offline
+            }
+        }, 200);
+        return () => clearInterval(iv);
+    }, []);
+    const connectGoogle = () => {
+        if (GOOGLE_CLIENT_ID.startsWith("YOUR_CLIENT_ID")) {
+            setGcalError("ยังไม่ได้ตั้งค่า Google Client ID — ดูวิธีตั้งค่าใน README.md");
+            return;
+        }
+        if (!tokenClientRef.current) {
+            setGcalError("ระบบ Google ยังโหลดไม่เสร็จ ลองใหม่อีกครั้งใน 2-3 วินาที");
+            return;
+        }
+        tokenClientRef.current.requestAccessToken({ prompt: "" });
+    };
+    const disconnectGoogle = () => {
+        var _a, _b, _c;
+        if (googleToken && ((_c = (_b = (_a = window.google) === null || _a === void 0 ? void 0 : _a.accounts) === null || _b === void 0 ? void 0 : _b.oauth2) === null || _c === void 0 ? void 0 : _c.revoke)) {
+            window.google.accounts.oauth2.revoke(googleToken, () => { });
+        }
+        setGoogleToken(null);
+        setGoogleEvents([]);
+    };
+    const fetchGoogleEvents = async (token) => {
+        setGcalSyncing(true);
+        setGcalError("");
+        try {
+            const timeMin = new Date();
+            timeMin.setDate(timeMin.getDate() - 7);
+            const timeMax = new Date();
+            timeMax.setDate(timeMax.getDate() + 60);
+            const items = await gcalListEvents(token, timeMin.toISOString(), timeMax.toISOString());
+            setGoogleEvents(items);
+        }
+        catch (e) {
+            if (String(e.message).includes("401")) {
+                setGoogleToken(null);
+                setGcalError("เซสชัน Google หมดอายุ กรุณาเชื่อมต่อใหม่");
+            }
+            else {
+                setGcalError("ดึงข้อมูลจาก Google Calendar ไม่สำเร็จ");
+            }
+        }
+        finally {
+            setGcalSyncing(false);
+        }
+    };
+    React.useEffect(() => {
+        if (googleToken)
+            fetchGoogleEvents(googleToken);
+    }, [googleToken]);
     // Load saved tasks on first mount. Falls back to the seed example
     // tasks the very first time the app is opened (nothing saved yet).
     React.useEffect(() => {
@@ -614,6 +925,37 @@ function TaskDashboard() {
     }, [tasks, loaded]);
     const updateTask = (id, patch) => {
         setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updated: todayISO() } : t)));
+    };
+    // Push a booked task/subtask time to Google Calendar — creates the
+    // event on first sync, updates it on subsequent syncs (tracked via
+    // the stored gcalEventId).
+    const pushBookingToGoogle = async ({ taskId, subId, title, description, workDate, workStart, workEnd, existingEventId }) => {
+        if (!googleToken)
+            return;
+        setGcalError("");
+        try {
+            const startISO = toRFC3339(workDate, workStart);
+            const endISO = toRFC3339(workDate, workEnd);
+            const result = existingEventId
+                ? await gcalUpdateEvent(googleToken, existingEventId, { summary: title, description, startISO, endISO })
+                : await gcalInsertEvent(googleToken, { summary: title, description, startISO, endISO });
+            if (subId) {
+                updateSubtask(taskId, subId, { gcalEventId: result.id });
+            }
+            else {
+                updateTask(taskId, { gcalEventId: result.id });
+            }
+            fetchGoogleEvents(googleToken);
+        }
+        catch (e) {
+            if (String(e.message).includes("401")) {
+                setGoogleToken(null);
+                setGcalError("เซสชัน Google หมดอายุ กรุณาเชื่อมต่อใหม่");
+            }
+            else {
+                setGcalError("ซิงค์กับ Google Calendar ไม่สำเร็จ");
+            }
+        }
     };
     const deleteTask = (id) => {
         setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -681,6 +1023,7 @@ function TaskDashboard() {
             category: "งานเรียน",
             owner: "Tarn",
             priority: "กลาง",
+            important: false,
             start: todayISO(),
             deadline: todayISO(),
             status: "To Do",
@@ -751,6 +1094,9 @@ function TaskDashboard() {
                 React.createElement("button", { onClick: () => setView("calendar"), className: `flex items-center gap-2 rounded-lg px-3 py-2 text-left font-medium transition-colors ${view === "calendar" ? "bg-white/10 text-white" : "text-gray-400 hover:bg-white/5"}` },
                     React.createElement(CalendarDays, { size: 13 }),
                     " \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\u0E07\u0E32\u0E19"),
+                React.createElement("button", { onClick: () => setView("matrix"), className: `flex items-center gap-2 rounded-lg px-3 py-2 text-left font-medium transition-colors ${view === "matrix" ? "bg-white/10 text-white" : "text-gray-400 hover:bg-white/5"}` },
+                    React.createElement(Grid2x2, { size: 13 }),
+                    " \u0E08\u0E31\u0E14\u0E25\u0E33\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D"),
                 React.createElement("div", { className: "my-1 h-px bg-white/10" }),
                 CATEGORY.map((c) => {
                     const count = tasks.filter((t) => t.category === c).length;
@@ -761,6 +1107,18 @@ function TaskDashboard() {
                         React.createElement("span", null, c),
                         React.createElement("span", { className: "text-xs tabular-nums text-gray-500" }, count)));
                 })),
+            React.createElement("div", { className: "mb-2 rounded-lg bg-white/5 px-3 py-2.5" },
+                React.createElement("div", { className: "mb-1.5 flex items-center justify-between" },
+                    React.createElement("span", { className: "flex items-center gap-1.5 text-xs font-medium text-gray-300" },
+                        React.createElement(CalendarDays, { size: 12 }),
+                        " Google Calendar"),
+                    googleToken && (React.createElement("span", { className: "h-1.5 w-1.5 rounded-full", style: { background: "#10B981" }, title: "\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D\u0E2D\u0E22\u0E39\u0E48" }))),
+                googleToken ? (React.createElement("div", { className: "space-y-1.5" },
+                    React.createElement("p", { className: "text-[11px] text-gray-500" }, gcalSyncing ? "กำลังซิงค์..." : `เชื่อมต่อแล้ว · ${googleEvents.length} events`),
+                    React.createElement("div", { className: "flex gap-1.5" },
+                        React.createElement("button", { onClick: () => fetchGoogleEvents(googleToken), className: "flex-1 rounded-md border border-white/10 py-1 text-[11px] text-gray-300 hover:bg-white/5" }, "\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49"),
+                        React.createElement("button", { onClick: disconnectGoogle, className: "flex-1 rounded-md border border-white/10 py-1 text-[11px] text-gray-400 hover:bg-white/5" }, "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D")))) : (React.createElement("button", { onClick: connectGoogle, className: "flex w-full items-center justify-center gap-1.5 rounded-md bg-white/10 py-1.5 text-[11px] font-medium text-white hover:bg-white/20" }, "\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D Google Calendar")),
+                gcalError && React.createElement("p", { className: "mt-1.5 text-[10px] text-red-300" }, gcalError)),
             saveError && (React.createElement("div", { className: "mb-2 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-300" }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u2014 \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E2D\u0E32\u0E08\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E27\u0E49")),
             React.createElement("div", { className: "mt-auto rounded-lg bg-white/5 px-3 py-3 text-xs text-gray-400" },
                 React.createElement("div", { className: "mb-1 font-medium text-gray-300" }, "Weekly Review"),
@@ -768,8 +1126,12 @@ function TaskDashboard() {
         React.createElement("div", { className: "flex flex-1 flex-col overflow-hidden" },
             React.createElement("header", { className: "flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-4" },
                 React.createElement("div", null,
-                    React.createElement("h1", { className: "text-base font-semibold text-[#1F2430]" }, view === "tasks" ? "งานทั้งหมด" : "ปฏิทินงาน"),
-                    React.createElement("p", { className: "text-xs text-gray-400" }, view === "tasks" ? "ติดตามสถานะและความคืบหน้า" : "ช่วงเวลาที่จองไว้สำหรับลงมือทำงาน")),
+                    React.createElement("h1", { className: "text-base font-semibold text-[#1F2430]" }, view === "tasks" ? "งานทั้งหมด" : view === "calendar" ? "ปฏิทินงาน" : "จัดลำดับความสำคัญ"),
+                    React.createElement("p", { className: "text-xs text-gray-400" }, view === "tasks"
+                        ? "ติดตามสถานะและความคืบหน้า"
+                        : view === "calendar"
+                            ? "ช่วงเวลาที่จองไว้สำหรับลงมือทำงาน"
+                            : "แยกงานตามความสำคัญและความเร่งด่วน")),
                 view === "tasks" && (React.createElement("button", { onClick: addTask, className: "flex items-center gap-1.5 rounded-lg bg-[#4F5DFF] px-3 py-2 text-xs font-medium text-white transition-transform hover:brightness-110 active:scale-95" },
                     React.createElement(Plus, { size: 14 }),
                     " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E07\u0E32\u0E19"))),
@@ -839,7 +1201,7 @@ function TaskDashboard() {
                                         }, className: "text-gray-300 hover:text-red-500" },
                                         React.createElement(Trash2, { size: 13 })))))),
                             filtered.length === 0 && (React.createElement("tr", null,
-                                React.createElement("td", { colSpan: 7, className: "px-3 py-10 text-center text-xs text-gray-400" }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E15\u0E31\u0E27\u0E01\u0E23\u0E2D\u0E07")))))))) : (React.createElement(CalendarView, { tasks: tasks, onSelectTask: (t) => setSelected(t) })))),
+                                React.createElement("td", { colSpan: 7, className: "px-3 py-10 text-center text-xs text-gray-400" }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E15\u0E31\u0E27\u0E01\u0E23\u0E2D\u0E07")))))))) : view === "calendar" ? (React.createElement(CalendarView, { tasks: tasks, onSelectTask: (t) => setSelected(t), googleEvents: googleEvents })) : (React.createElement(MatrixView, { tasks: tasks, onSelectTask: (t) => setSelected(t), onToggleImportant: (id, val) => updateTask(id, { important: val }) })))),
         selected && (React.createElement(React.Fragment, null,
             React.createElement("div", { className: "fixed inset-0 z-30 bg-black/20", onClick: () => setSelected(null) }),
             React.createElement("aside", { className: "fixed right-0 top-0 z-40 flex h-full w-96 flex-col border-l border-gray-200 bg-white shadow-2xl" },
@@ -867,6 +1229,18 @@ function TaskDashboard() {
                                     updateTask(selected.id, { priority: e.target.value });
                                     setSelected((s) => ({ ...s, priority: e.target.value }));
                                 }, className: "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none" }, PRIORITY.map((p) => (React.createElement("option", { key: p }, p)))))),
+                    React.createElement("button", { onClick: () => {
+                            const val = !selected.important;
+                            updateTask(selected.id, { important: val });
+                            setSelected((s) => ({ ...s, important: val }));
+                        }, className: "flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition-colors", style: {
+                            borderColor: selected.important ? "#F59E0B" : "#E5E7EB",
+                            background: selected.important ? "#FFFBEB" : "white",
+                            color: selected.important ? "#B45309" : "#6B7280",
+                        } },
+                        React.createElement("svg", { width: "13", height: "13", viewBox: "0 0 24 24", fill: selected.important ? "#F59E0B" : "none", stroke: selected.important ? "#F59E0B" : "#9CA3AF", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                            React.createElement("polygon", { points: "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" })),
+                        selected.important ? "งานสำคัญ" : "ทำเครื่องหมายว่าเป็นงานสำคัญ"),
                     React.createElement("div", { className: "grid grid-cols-2 gap-3" },
                         React.createElement("div", null,
                             React.createElement("label", { className: "mb-1 block text-xs text-gray-400" }, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E23\u0E34\u0E48\u0E21"),
@@ -917,11 +1291,31 @@ function TaskDashboard() {
                         selected.workDate && selected.workStart && selected.workEnd && (React.createElement(React.Fragment, null,
                             React.createElement("p", { className: "mt-2 text-xs text-gray-500" },
                                 "\u0E08\u0E2D\u0E07\u0E44\u0E27\u0E49: ",
-                                formatSessionTime(selected.workDate, selected.workStart, selected.workEnd)),
-                            buildGCalUrl(taskToGCalItem(selected)) ? (React.createElement("a", { href: buildGCalUrl(taskToGCalItem(selected)), target: "_blank", rel: "noopener noreferrer", className: "mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#4F5DFF] py-2 text-xs font-medium text-white hover:brightness-110" },
+                                formatSessionTime(selected.workDate, selected.workStart, selected.workEnd),
+                                selected.gcalEventId && (React.createElement("span", { className: "ml-1.5 inline-flex items-center gap-0.5 text-[#4F5DFF]" },
+                                    React.createElement(Check, { size: 11 }),
+                                    " \u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E41\u0E25\u0E49\u0E27"))),
+                            googleToken ? (React.createElement("button", { onClick: () => pushBookingToGoogle({
+                                    taskId: selected.id,
+                                    title: selected.name,
+                                    description: [
+                                        selected.next ? `Next action: ${selected.next}` : "",
+                                        selected.blocker ? `Blocker: ${selected.blocker}` : "",
+                                        `หมวดหมู่: ${selected.category} | Priority: ${selected.priority}`,
+                                    ]
+                                        .filter(Boolean)
+                                        .join("\n"),
+                                    workDate: selected.workDate,
+                                    workStart: selected.workStart,
+                                    workEnd: selected.workEnd,
+                                    existingEventId: selected.gcalEventId,
+                                }), className: "mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#4F5DFF] py-2 text-xs font-medium text-white hover:brightness-110" },
                                 React.createElement(ExternalLink, { size: 13 }),
-                                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E25\u0E07 Google Calendar")) : (React.createElement("p", { className: "mt-2 text-xs text-red-400" }, "\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21"))))),
-                    React.createElement(SubtaskList, { task: selected, onAdd: (title) => addSubtask(selected.id, title), onToggle: (subId) => toggleSubtask(selected.id, subId), onDelete: (subId) => deleteSubtask(selected.id, subId), onUpdate: (subId, patch) => updateSubtask(selected.id, subId, patch) }),
+                                " ",
+                                selected.gcalEventId ? "อัปเดตใน Google Calendar" : "ซิงค์กับ Google Calendar")) : buildGCalUrl(taskToGCalItem(selected)) ? (React.createElement("a", { href: buildGCalUrl(taskToGCalItem(selected)), target: "_blank", rel: "noopener noreferrer", className: "mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-500 py-2 text-xs font-medium text-white hover:brightness-110" },
+                                React.createElement(ExternalLink, { size: 13 }),
+                                " \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E25\u0E07 Google Calendar (\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D)")) : (React.createElement("p", { className: "mt-2 text-xs text-red-400" }, "\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E40\u0E27\u0E25\u0E32\u0E40\u0E23\u0E34\u0E48\u0E21"))))),
+                    React.createElement(SubtaskList, { task: selected, onAdd: (title) => addSubtask(selected.id, title), onToggle: (subId) => toggleSubtask(selected.id, subId), onDelete: (subId) => deleteSubtask(selected.id, subId), onUpdate: (subId, patch) => updateSubtask(selected.id, subId, patch), googleToken: googleToken, onPushToGoogle: (subId, booking) => pushBookingToGoogle({ taskId: selected.id, subId, ...booking }) }),
                     React.createElement("div", null,
                         React.createElement("label", { className: "mb-1 block text-xs text-gray-400" }, "Next Action"),
                         React.createElement("textarea", { value: selected.next, onChange: (e) => {
