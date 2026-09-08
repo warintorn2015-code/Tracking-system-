@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Task Ops</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%234F5DFF%22/><text x=%2212%22 y=%2217%22 font-size=%2214%22 fill=%22white%22 text-anchor=%22middle%22 font-family=%22Arial%22>T</text></svg>" />
+
+<!-- iOS: launch in standalone (no browser chrome) once added to Home Screen -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Task Ops" />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<!-- Tailwind (CDN build, utility classes only — fine for a personal single-page tool) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- React 18 (UMD) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+<!-- Google Identity Services (for Google Calendar two-way sync) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 4px; }
+</style>
+
+<!-- TEMPORARY debug helper: shows any JS error directly on screen instead of
+     a silent blank page. Remove this <script> block once things work. -->
+<script>
+  window.addEventListener("error", function (e) {
+    var box = document.getElementById("debug-box");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "debug-box";
+      box.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#FEF2F2;color:#B91C1C;font:12px/1.5 monospace;padding:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;border-bottom:2px solid #EF4444;";
+      document.body.appendChild(box);
+    }
+    var line = document.createElement("div");
+    line.style.marginBottom = "8px";
+    line.textContent = "ERROR: " + e.message + "\n  at " + (e.filename || "?") + ":" + e.lineno + ":" + e.colno;
+    box.appendChild(line);
+  });
+</script>
+</head>
+<body>
+  <div id="root">
+    <div style="display:flex;height:100vh;width:100%;align-items:center;justify-content:center;font-family:Inter,system-ui,sans-serif;color:#9CA3AF;font-size:13px;">
+      กำลังโหลด...
+    </div>
+  </div>
+
+  <script src="app.compiled.js"></script>
+</body>
+</html>
